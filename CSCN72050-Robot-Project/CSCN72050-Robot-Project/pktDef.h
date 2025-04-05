@@ -1,5 +1,5 @@
 /*
-	File:	 pktDef.cpp
+	File:	 pktDef.h
 	Authors: Max Venables, Ryan Witley
 	Date:	 2025-04-04
 	Purpose: Defines the PktDef class.
@@ -8,7 +8,7 @@
 #include <iostream>
 using namespace std;
 
-const int HEADERSIZE; // size of the header in bytes -- needs to be calculated still
+const int HEADERSIZE = 4; // Size of packet header in bytes
 
 enum Direction {
 	FORWARD = 1,
@@ -25,15 +25,21 @@ enum CmdType {
 
 typedef struct Header {
 	unsigned short int pktCount;
+	
+	// Command flags
+	unsigned char drive : 1;
+	unsigned char status : 1;
+	unsigned char sleep : 1;
+	unsigned char ack : 1;
+	unsigned char padding : 4; // Extra padding
+
 	unsigned short int length;
-	char* data;
-	unsigned char crc;
 };
 
 typedef struct DriveBody {
 	enum Direction direction;
 	unsigned char duration;
-	unsigned short int speed;	// should stay between 80 - 100
+	unsigned short int speed; // Should stay between 80 - 100
 };
 
 class PktDef {
@@ -42,31 +48,121 @@ class PktDef {
 		char* data;
 		char crc;
 	};
+	CmdPkt cmdPkt;
 	char* rawBuffer;
 
+public:
 	// Default constructor
-	PktDef();
+	PktDef() {
+		cmdPkt.header.pktCount = 0;
+		cmdPkt.header.drive = 0;
+		cmdPkt.header.status = 0;
+		cmdPkt.header.sleep = 0;
+		cmdPkt.header.ack = 0;
+		cmdPkt.header.padding = 0;
+		cmdPkt.header.length = 0;
+		cmdPkt.data = nullptr;
+		cmdPkt.crc = 0;
+		rawBuffer = nullptr;
+	}
 
-	// Overloaded constructor
-	PktDef(char* data);
+	/*
+		Overloaded constructor. Deserializes a data buffer into a data packet.
+		- buffer : raw data buffer
+	*/
+	PktDef(char* buffer) {
+		int offset = 0;
+		
+		// Read packet count (2 bytes)
+		cmdPkt.header.pktCount = *(reinterpret_cast<const uint16_t*>(buffer + offset));
+		offset += 2;
 
-	// Setters
-	void setCmd(CmdType cmd);
+		// Read command flags and padding (1 byte total)
+		unsigned char flags = *(reinterpret_cast<const unsigned char*>(buffer + offset));
+		cmdPkt.header.drive = (flags >> 0) & 0x01;
+		cmdPkt.header.status = (flags >> 1) & 0x01;
+		cmdPkt.header.sleep = (flags >> 2) & 0x01;
+		cmdPkt.header.ack = (flags >> 3) & 0x01;
+		cmdPkt.header.padding = (flags >> 4) & 0x0F;
+		offset += 1;
 
-	void setBodyData(char* data, int size);
+		// Read Length (2 bytes)
+		cmdPkt.header.length = *(reinterpret_cast<const uint16_t*>(buffer + offset));
+		offset += 2;
 
-	void setPktCount(int count);
+		// Allocate and copy Data (size varies)
+		cmdPkt.data = new char[cmdPkt.header.length];
+		memcpy(cmdPkt.data, buffer + offset, cmdPkt.header.length);
+		offset += cmdPkt.header.length;
 
-	// Getters
-	CmdType getCmd();
+		// Read CRC (1 byte)
+		cmdPkt.crc = *(reinterpret_cast<const unsigned char*>(buffer + offset));
+	}
 
-	bool getAck();
+	// === SETTERS ===
 
-	int getlength();
+	void setCmd(CmdType cmd) {
+		// Preventing multiple flags from being active at once
+		cmdPkt.header.drive = 0;
+		cmdPkt.header.status = 0;
+		cmdPkt.header.sleep = 0;
 
-	char* getBodyData();
+		switch (cmd) {
+		case DRIVE:
+			cmdPkt.header.drive = 1;
+			break;
+		case SLEEP:
+			cmdPkt.header.sleep = 1;
+			break;
+		case RESPONSE:
+			cmdPkt.header.status = 1;
+			break;
+		}
+	}
 
-	int getPktCount();
+	void setBodyData(char* buffer, int size) {
+		cmdPkt.data = new char[size];
+		memcpy(cmdPkt.data, buffer, size);
+	}
+
+	void setPktCount(int count) {
+		cmdPkt.header.pktCount = count;
+	}
+
+	// === GETTERS ===
+
+	CmdType getCmd() {
+		if (cmdPkt.header.drive == 1) {
+			return DRIVE;
+		}
+		else if (cmdPkt.header.sleep == 1) {
+			return SLEEP;
+		}
+		else if (cmdPkt.header.status == 1) {
+			return RESPONSE;
+		}
+	}
+
+	bool getAck() {
+		if (cmdPkt.header.ack == 1) {
+			return true;
+		}
+		else {
+			return false;
+		}
+	}
+
+	int getlength() {
+		return cmdPkt.header.length;
+	}
+
+	char* getBodyData() {
+		return cmdPkt.data;
+	}
+
+	int getPktCount() {
+		return cmdPkt.header.pktCount;
+	}
 
 	/*
 		Calculates the CRC based on the given raw data buffer.
