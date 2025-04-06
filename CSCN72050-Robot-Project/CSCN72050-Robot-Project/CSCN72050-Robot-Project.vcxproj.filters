@@ -21,5 +21,8 @@
     <ClCompile Include="pktDef.h">
       <Filter>Header Files</Filter>
     </ClCompile>
+    <ClCompile Include="pktDef.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
