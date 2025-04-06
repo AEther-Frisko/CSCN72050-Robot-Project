@@ -71,32 +71,35 @@ public:
 		- buffer : raw data buffer
 	*/
 	PktDef(char* buffer) {
-		int offset = 0;
-		
+		size_t offset = 0;
+
 		// Read packet count (2 bytes)
-		cmdPkt.header.pktCount = *(reinterpret_cast<const uint16_t*>(buffer + offset));
-		offset += 2;
+		memcpy(&cmdPkt.header.pktCount, buffer + offset, sizeof(cmdPkt.header.pktCount));
+		offset += sizeof(cmdPkt.header.pktCount);
 
 		// Read command flags and padding (1 byte total)
-		unsigned char flags = *(reinterpret_cast<const unsigned char*>(buffer + offset));
-		cmdPkt.header.drive = (flags >> 0) & 0x01;
-		cmdPkt.header.status = (flags >> 1) & 0x01;
-		cmdPkt.header.sleep = (flags >> 2) & 0x01;
-		cmdPkt.header.ack = (flags >> 3) & 0x01;
-		cmdPkt.header.padding = (flags >> 4) & 0x0F;
-		offset += 1;
+		unsigned char cmdByte;
+		memcpy(&cmdByte, buffer + offset, sizeof(cmdByte));
+		offset += sizeof(cmdByte);
+
+		cmdPkt.header.drive = (cmdByte >> 0) & 0x01;
+		cmdPkt.header.status = (cmdByte >> 1) & 0x01;
+		cmdPkt.header.sleep = (cmdByte >> 2) & 0x01;
+		cmdPkt.header.ack = (cmdByte >> 3) & 0x01;
+		cmdPkt.header.padding = 0;
 
 		// Read Length (2 bytes)
-		cmdPkt.header.length = *(reinterpret_cast<const uint16_t*>(buffer + offset));
-		offset += 2;
+		memcpy(&cmdPkt.header.length, buffer + offset, sizeof(cmdPkt.header.length));
+		offset += sizeof(cmdPkt.header.length);
 
 		// Allocate and copy Data (size varies)
-		cmdPkt.data = new char[cmdPkt.header.length];
-		memcpy(cmdPkt.data, buffer + offset, cmdPkt.header.length);
-		offset += cmdPkt.header.length;
+		size_t dataLen = cmdPkt.header.length - (sizeof(cmdPkt.header.pktCount) + sizeof(cmdByte) + sizeof(cmdPkt.header.length) + sizeof(cmdPkt.crc));
+		cmdPkt.data = new char[dataLen];
+		std::memcpy(cmdPkt.data, buffer + offset, dataLen);
+		offset += dataLen;
 
 		// Read CRC (1 byte)
-		cmdPkt.crc = *(reinterpret_cast<const unsigned char*>(buffer + offset));
+		memcpy(&cmdPkt.crc, buffer + offset, sizeof(cmdPkt.crc));
 	}
 
 	// === SETTERS ===
@@ -107,6 +110,7 @@ public:
 		cmdPkt.header.status = 0;
 		cmdPkt.header.sleep = 0;
 
+		// Activate flag accordingly
 		switch (cmd) {
 		case DRIVE:
 			cmdPkt.header.drive = 1;
@@ -182,5 +186,41 @@ public:
 		from the object's member variables into a raw data packet.
 		returns address of allocated raw buffer.
 	*/
-	char* genPacket();
+	char* genPacket() {
+		// Ensure that the header is an appropriate size
+		constexpr size_t HEADER_SIZE = sizeof(cmdPkt.header.pktCount) + sizeof(unsigned char) + sizeof(cmdPkt.header.length) + sizeof(cmdPkt.crc);
+		if (cmdPkt.header.length < HEADER_SIZE) {
+			cout << "ERROR: invalid header length." << endl;
+			return nullptr;
+		}
+
+		// Allocate buffer to store raw data
+		char* buffer = new char[cmdPkt.header.length];
+		size_t offset = 0;
+
+		// Store the packet count
+		memcpy(buffer + offset, &cmdPkt.header.pktCount, sizeof(cmdPkt.header.pktCount));
+		offset += sizeof(cmdPkt.header.pktCount);
+
+		// Store all the command flags
+		unsigned char cmdByte =
+			(cmdPkt.header.drive << 0) |
+			(cmdPkt.header.status << 1) |
+			(cmdPkt.header.sleep << 2) |
+			(cmdPkt.header.ack << 3);
+		memcpy(buffer + offset, &cmdByte, sizeof(cmdByte));
+
+		// Store the packet length
+		memcpy(buffer + offset, &cmdPkt.header.length, sizeof(cmdPkt.header.length));
+
+		// Store the packet data
+		size_t dataLen = cmdPkt.header.length - HEADER_SIZE;
+		memcpy(buffer + offset, cmdPkt.data, dataLen);
+		offset += dataLen;
+
+		// Store the CRC
+		memcpy(buffer + offset, &cmdPkt.crc, sizeof(cmdPkt.crc));
+
+		return buffer;
+	}
 };
