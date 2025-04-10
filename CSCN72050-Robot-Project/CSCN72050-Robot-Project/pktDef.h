@@ -1,3 +1,4 @@
+#pragma once
 /*
 	File:	 pktDef.h
 	Authors: Max Venables, Ryan Witley
