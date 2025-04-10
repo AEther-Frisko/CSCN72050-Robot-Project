@@ -128,6 +128,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="mySocket.cpp" />
     <ClCompile Include="pktDef.cpp" />
     <ClCompile Include="pktDef.h" />
   </ItemGroup>

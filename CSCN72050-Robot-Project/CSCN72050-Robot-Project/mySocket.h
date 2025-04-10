@@ -24,8 +24,8 @@ enum ConnectionType {
 
 class MySocket {
 	char* buffer;
-	int welcomeSocket;
-	int connectionSocket;
+	SOCKET welcomeSocket;
+	SOCKET connectionSocket;
 	struct sockaddr_in svrAddr;
 	SocketType mySocket;
 	string ipAddr;
